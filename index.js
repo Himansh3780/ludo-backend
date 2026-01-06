@@ -5,25 +5,22 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// In-memory match store (OK for now)
 let waitingUser = null;
-let matches = {}; 
-// structure:
+let matches = {};
 // matches[matchId] = {
 //   playerA,
 //   playerB,
-//   roomCode: ""
+//   roomCode,
+//   result: { winnerUid, screenshotUrl }
 // }
 
 function createMatchId(a, b) {
   return `${a}_${b}`;
 }
 
-// JOIN MATCH
 app.post("/join", (req, res) => {
   const { uid } = req.body;
 
-  // If user already in a match, return status
   for (const id in matches) {
     const m = matches[id];
     if (m.playerA === uid || m.playerB === uid) {
@@ -37,12 +34,8 @@ app.post("/join", (req, res) => {
     }
   }
 
-  if (!waitingUser) {
+  if (!waitingUser || waitingUser === uid) {
     waitingUser = uid;
-    return res.json({ status: "waiting" });
-  }
-
-  if (waitingUser === uid) {
     return res.json({ status: "waiting" });
   }
 
@@ -51,39 +44,37 @@ app.post("/join", (req, res) => {
   waitingUser = null;
 
   const matchId = createMatchId(playerA, playerB);
-  matches[matchId] = { playerA, playerB, roomCode: "" };
+  matches[matchId] = { playerA, playerB, roomCode: "", result: null };
 
-  return res.json({
-    status: "matched",
-    matchId,
-    playerA,
-    playerB
-  });
+  res.json({ status: "matched", matchId, playerA, playerB });
 });
 
-// PLAYER A SENDS ROOM CODE
 app.post("/room-code", (req, res) => {
   const { matchId, uid, roomCode } = req.body;
   const match = matches[matchId];
-
-  if (!match) return res.status(400).json({ error: "Match not found" });
-  if (match.playerA !== uid)
-    return res.status(403).json({ error: "Only Player A can send code" });
+  if (!match || match.playerA !== uid)
+    return res.status(400).json({ error: "Invalid" });
 
   match.roomCode = roomCode;
   res.json({ success: true });
 });
 
-// PLAYER B CHECKS STATUS
-app.post("/status", (req, res) => {
-  const { matchId } = req.body;
+// NEW: submit result
+app.post("/submit-result", (req, res) => {
+  const { matchId, winnerUid, screenshotUrl } = req.body;
   const match = matches[matchId];
-
   if (!match) return res.status(400).json({ error: "Match not found" });
 
-  res.json({
-    roomCode: match.roomCode || null
-  });
+  match.result = { winnerUid, screenshotUrl };
+  res.json({ success: true });
+});
+
+// NEW: admin view
+app.post("/admin-result", (req, res) => {
+  const { matchId } = req.body;
+  const match = matches[matchId];
+  if (!match) return res.status(400).json({ error: "Match not found" });
+  res.json(match.result);
 });
 
 app.listen(3000, () => console.log("Backend running"));
